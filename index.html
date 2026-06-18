@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gallery</title>
+<style>
+  :root {
+    --bg: #f7f2eb;
+    --bg2: #efe8dd;
+    --warm: #c9a97a;
+    --ink: #2e2720;
+    --ink-light: #7a6a58;
+    --ink-faint: #b8a898;
+    --paper: #faf7f2;
+    --overlay: rgba(247,242,235,0.88);
+    --shadow: rgba(46,39,32,0.10);
+    --sans: 'Helvetica Neue', Arial, sans-serif;
+    --serif: Georgia, 'Times New Roman', serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--serif); min-height: 100vh; }
+
+  .page { display: none; min-height: 100vh; }
+  .page.active { display: block; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 36px 60px 28px; border-bottom: 1px solid var(--bg2);
+  }
+  .site-title { font-family: var(--serif); font-size: 13px; letter-spacing: 6px; color: var(--ink-light); text-transform: uppercase; }
+  .header-nav { display: flex; gap: 28px; align-items: center; }
+  .header-nav a { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; color: var(--ink-faint); text-decoration: none; text-transform: uppercase; cursor: pointer; transition: color 0.2s; }
+  .header-nav a:hover { color: var(--ink); }
+
+  /* GALLERY */
+  .gallery-section { padding: 64px 60px; max-width: 1100px; margin: 0 auto; }
+  .work-item { display: flex; gap: 64px; align-items: flex-start; margin-bottom: 100px; opacity: 0; transform: translateY(24px); transition: opacity 0.7s ease, transform 0.7s ease; }
+  .work-item.visible { opacity: 1; transform: translateY(0); }
+  .work-item:nth-child(even) { flex-direction: row-reverse; }
+  .work-img-wrap { flex: 0 0 48%; cursor: zoom-in; overflow: hidden; }
+  .work-img-wrap img { width: 100%; display: block; border-radius: 1px; transition: transform 0.6s cubic-bezier(0.25,0.46,0.45,0.94); }
+  .work-img-wrap:hover img { transform: scale(1.03); }
+  .work-text { flex: 1; padding-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .work-title { font-family: var(--serif); font-size: 22px; letter-spacing: 2px; color: var(--ink); font-weight: normal; }
+  .work-date { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; color: var(--ink-faint); }
+  .work-story { font-family: var(--serif); font-size: 13px; line-height: 2.2; color: var(--ink-light); margin-top: 8px; }
+
+  .empty-state { text-align: center; padding: 100px 0; color: var(--ink-faint); }
+  .empty-state p { font-size: 13px; letter-spacing: 2px; margin-bottom: 20px; }
+  .empty-state button { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; padding: 10px 24px; border: 1px solid var(--warm); background: transparent; color: var(--warm); cursor: pointer; text-transform: uppercase; border-radius: 1px; transition: all 0.2s; }
+  .empty-state button:hover { background: var(--warm); color: var(--paper); }
+
+  /* LIGHTBOX */
+  #lightbox { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; }
+  #lightbox.open { pointer-events: all; opacity: 1; }
+  .lb-overlay { position: absolute; inset: 0; background: var(--overlay); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); opacity: 0; transition: opacity 0.4s ease; }
+  #lightbox.open .lb-overlay { opacity: 1; }
+  .lb-content { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; max-width: 80vw; transform: scale(0.88); opacity: 0; transition: transform 0.45s cubic-bezier(0.34,1.2,0.64,1), opacity 0.35s ease; }
+  #lightbox.open .lb-content { transform: scale(1); opacity: 1; }
+  .lb-img-wrap { position: relative; max-height: 72vh; }
+  .lb-img-wrap img { max-width: 75vw; max-height: 68vh; display: block; border-radius: 1px; box-shadow: 0 20px 60px var(--shadow); }
+  .lb-caption { text-align: center; margin-top: 20px; padding: 0 20px; }
+  .lb-caption-title { font-family: var(--serif); font-size: 15px; letter-spacing: 3px; color: var(--ink); font-weight: normal; }
+  .lb-caption-date { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; color: var(--ink-faint); margin-top: 5px; }
+  .lb-close { position: fixed; top: 28px; right: 36px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; color: var(--ink-light); font-size: 20px; border: 1px solid var(--ink-faint); border-radius: 50%; background: var(--paper); transition: all 0.2s; opacity: 0; }
+  #lightbox.open .lb-close { opacity: 1; }
+  .lb-close:hover { background: var(--ink); color: var(--paper); }
+  .lb-arrow { position: fixed; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; color: var(--ink-light); font-size: 18px; border: 1px solid var(--ink-faint); border-radius: 50%; background: var(--paper); transition: all 0.2s; opacity: 0; user-select: none; }
+  #lightbox.open .lb-arrow { opacity: 1; }
+  .lb-arrow:hover { background: var(--ink); color: var(--paper); }
+  .lb-prev { left: 28px; } .lb-next { right: 28px; }
+  .lb-arrow.hidden { opacity: 0 !important; pointer-events: none; }
+  .lb-img-fade { transition: opacity 0.25s ease; }
+  .lb-img-fade.out { opacity: 0; }
+
+  /* ADMIN */
+  .admin-wrap { max-width: 860px; margin: 0 auto; padding: 56px 40px; }
+  .admin-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 40px; border-bottom: 1px solid var(--bg2); padding-bottom: 20px; }
+  .admin-title { font-family: var(--sans); font-size: 10px; letter-spacing: 4px; color: var(--ink-faint); text-transform: uppercase; }
+  .admin-header-actions { display: flex; gap: 10px; }
+
+  .btn { font-family: var(--sans); font-size: 10px; letter-spacing: 2px; padding: 8px 20px; border-radius: 1px; cursor: pointer; text-transform: uppercase; border: 1px solid; transition: all 0.2s; }
+  .btn-primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn-primary:hover { background: var(--ink-light); border-color: var(--ink-light); }
+  .btn-ghost { background: transparent; color: var(--ink-light); border-color: var(--bg2); }
+  .btn-ghost:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .btn-danger { background: transparent; color: #b05050; border-color: #d0a0a0; }
+  .btn-danger:hover { background: #b05050; color: white; border-color: #b05050; }
+  .btn-ai { background: transparent; color: #7a6a9a; border-color: #c0b0d8; }
+  .btn-ai:hover { background: #7a6a9a; color: white; border-color: #7a6a9a; }
+  .btn-sm { padding: 5px 12px; font-size: 9px; }
+
+  /* admin list */
+  .admin-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 40px; }
+  .admin-item { display: flex; align-items: center; gap: 16px; background: var(--paper); border: 1px solid var(--bg2); border-radius: 2px; padding: 14px 16px; }
+  .admin-item-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 1px; flex-shrink: 0; background: var(--bg2); }
+  .admin-item-info { flex: 1; min-width: 0; }
+  .admin-item-name { font-family: var(--serif); font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .admin-item-date { font-family: var(--sans); font-size: 10px; color: var(--ink-faint); letter-spacing: 1px; margin-top: 3px; }
+  .admin-item-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .drag-handle { color: var(--ink-faint); cursor: grab; font-size: 16px; padding: 0 4px; user-select: none; }
+  .drag-handle:active { cursor: grabbing; }
+  .admin-item.drag-over { border-color: var(--warm); background: #fdf8f2; }
+
+  /* single form */
+  .form-panel { background: var(--paper); border: 1px solid var(--bg2); border-radius: 2px; padding: 28px; margin-bottom: 32px; display: none; }
+  .form-panel.open { display: block; }
+  .form-title { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; color: var(--ink-faint); text-transform: uppercase; margin-bottom: 24px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-group label { font-family: var(--sans); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); }
+  .form-group input, .form-group textarea { font-family: var(--serif); font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--bg2); border-radius: 1px; padding: 10px 12px; outline: none; transition: border-color 0.2s; resize: vertical; }
+  .form-group input:focus, .form-group textarea:focus { border-color: var(--warm); }
+  .form-group textarea { min-height: 90px; line-height: 1.8; }
+  .img-upload-area { border: 1.5px dashed var(--bg2); border-radius: 2px; padding: 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; }
+  .img-upload-area:hover { border-color: var(--warm); background: #faf5ee; }
+  .img-upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .img-upload-area p { font-family: var(--sans); font-size: 10px; letter-spacing: 2px; color: var(--ink-faint); text-transform: uppercase; }
+  .img-preview { max-width: 100%; max-height: 160px; border-radius: 1px; margin-bottom: 8px; display: none; }
+  .form-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+
+  /* ── BATCH UPLOAD PANEL ── */
+  .batch-panel { background: var(--paper); border: 1px solid var(--bg2); border-radius: 2px; padding: 28px; margin-bottom: 32px; display: none; }
+  .batch-panel.open { display: block; }
+  .batch-drop-zone { border: 1.5px dashed var(--bg2); border-radius: 2px; padding: 40px 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; position: relative; margin-bottom: 24px; }
+  .batch-drop-zone:hover, .batch-drop-zone.dragover { border-color: var(--warm); background: #faf5ee; }
+  .batch-drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .batch-drop-zone .drop-icon { font-size: 28px; margin-bottom: 10px; }
+  .batch-drop-zone p { font-family: var(--sans); font-size: 10px; letter-spacing: 2px; color: var(--ink-faint); text-transform: uppercase; }
+  .batch-drop-zone p span { color: var(--warm); }
+
+  .batch-list { display: flex; flex-direction: column; gap: 16px; }
+  .batch-item { border: 1px solid var(--bg2); border-radius: 2px; background: var(--bg); overflow: hidden; }
+  .batch-item-header { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+  .batch-item-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 1px; flex-shrink: 0; }
+  .batch-item-meta { flex: 1; min-width: 0; }
+  .batch-item-filename { font-family: var(--sans); font-size: 11px; color: var(--ink-light); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .batch-item-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  .batch-item-form { padding: 0 16px 16px; display: none; }
+  .batch-item-form.open { display: block; }
+  .batch-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .batch-form-grid .form-group.full { grid-column: 1 / -1; }
+
+  /* AI suggestion card */
+  .ai-card { background: #f3f0f8; border: 1px solid #d8d0ec; border-radius: 2px; padding: 16px; margin-bottom: 12px; position: relative; }
+  .ai-card-label { font-family: var(--sans); font-size: 9px; letter-spacing: 2px; color: #7a6a9a; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .ai-card-label::before { content: '✦'; font-size: 10px; }
+  .ai-card-title { font-family: var(--serif); font-size: 15px; color: var(--ink); margin-bottom: 6px; }
+  .ai-card-story { font-family: var(--serif); font-size: 12px; line-height: 1.9; color: var(--ink-light); }
+  .ai-card-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .ai-loading { display: flex; align-items: center; gap: 10px; padding: 16px; background: #f3f0f8; border: 1px solid #d8d0ec; border-radius: 2px; margin-bottom: 12px; }
+  .ai-loading-dots { display: flex; gap: 4px; }
+  .ai-loading-dots span { width: 6px; height: 6px; border-radius: 50%; background: #7a6a9a; animation: dotpulse 1.2s infinite; }
+  .ai-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .ai-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dotpulse { 0%,80%,100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+  .ai-loading-text { font-family: var(--sans); font-size: 10px; letter-spacing: 2px; color: #7a6a9a; text-transform: uppercase; }
+
+  .batch-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--bg2); }
+
+  /* batch select all AI */
+  .batch-ai-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding: 12px 16px; background: #f3f0f8; border: 1px solid #d8d0ec; border-radius: 2px; }
+  .batch-ai-bar p { font-family: var(--sans); font-size: 10px; letter-spacing: 1px; color: #7a6a9a; flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- GALLERY -->
+<div class="page active" id="page-gallery">
+  <header>
+    <div class="site-title">Gallery</div>
+    <nav class="header-nav"></nav>
+  </header>
+  <div class="gallery-section" id="gallery-list"></div>
+</div>
+
+<!-- ADMIN -->
+<div class="page" id="page-admin">
+  <header>
+    <div class="site-title">後台管理</div>
+    <nav class="header-nav">
+      <a onclick="showPage('page-gallery')">← 回到畫廊</a>
+    </nav>
+  </header>
+  <div class="admin-wrap">
+    <div class="admin-header">
+      <div class="admin-title">作品列表</div>
+      <div class="admin-header-actions">
+        <button class="btn btn-ghost" onclick="openBatch()">⊕ 批量上傳</button>
+        <button class="btn btn-primary" onclick="openForm()">＋ 新增作品</button>
+      </div>
+    </div>
+
+    <!-- Batch Panel -->
+    <div class="batch-panel" id="batch-panel">
+      <div class="form-title">批量上傳圖片</div>
+      <div class="batch-drop-zone" id="batch-drop-zone">
+        <input type="file" accept="image/*" multiple id="batch-file-input" onchange="handleBatchUpload(event)">
+        <div class="drop-icon">🖼</div>
+        <p>點擊或拖曳選取多張圖片<br><span>支援 JPG、PNG、WEBP</span></p>
+      </div>
+      <div id="batch-list" class="batch-list"></div>
+      <div class="batch-footer" id="batch-footer" style="display:none">
+        <button class="btn btn-ghost" onclick="closeBatch()">取消</button>
+        <button class="btn btn-primary" onclick="saveAllBatch()">全部儲存</button>
+      </div>
+    </div>
+
+    <!-- Single Form -->
+    <div class="form-panel" id="form-panel">
+      <div class="form-title" id="form-title">新增作品</div>
+      <div class="form-group full" style="margin-bottom:16px">
+        <label>圖片</label>
+        <div class="img-upload-area">
+          <input type="file" accept="image/*" id="img-file-input" onchange="handleImgUpload(event)">
+          <img class="img-preview" id="img-preview" src="" alt="">
+          <p id="upload-hint">點擊上傳圖片</p>
+        </div>
+        <div id="single-ai-btn-wrap" style="display:none; margin-top:10px">
+          <button type="button" class="btn btn-ai btn-sm" onclick="triggerSingleAI()">✦ AI 分析名稱與故事</button>
+        </div>
+        <div id="single-ai-area"></div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>畫作名稱（選填）</label>
+          <input type="text" id="f-title" placeholder="春日">
+        </div>
+        <div class="form-group">
+          <label>創作日期（選填）</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="date" id="f-date" style="flex:1">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="setToday()">今天</button>
+          </div>
+        </div>
+        <div class="form-group full">
+          <label>故事（選填）</label>
+          <textarea id="f-story" placeholder="這張畫背後的故事…"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-ghost" onclick="closeForm()">取消</button>
+        <button class="btn btn-primary" onclick="saveWork()">儲存</button>
+      </div>
+    </div>
+
+    <div class="admin-list" id="admin-list"></div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox">
+  <div class="lb-overlay" onclick="closeLightbox()"></div>
+  <div class="lb-arrow lb-prev" id="lb-prev" onclick="lbNav(-1)">&#8592;</div>
+  <div class="lb-content">
+    <div class="lb-img-wrap"><img id="lb-img" class="lb-img-fade" src="" alt=""></div>
+    <div class="lb-caption">
+      <div class="lb-caption-title" id="lb-title"></div>
+      <div class="lb-caption-date" id="lb-date"></div>
+    </div>
+  </div>
+  <div class="lb-arrow lb-next" id="lb-next" onclick="lbNav(1)">&#8594;</div>
+  <div class="lb-close" onclick="closeLightbox()">&#215;</div>
+</div>
+
+<script>
+const STORAGE_KEY = 'gallery_works_v1';
+function loadWorks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; } }
+function saveWorks(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+
+let works = loadWorks();
+let editingId = null;
+let currentImgData = null;
+let lbIndex = 0;
+
+// batch state: array of { imgData, filename, title, date, story }
+let batchItems = [];
+
+// ── PAGES ──
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  works = loadWorks();
+  if (id === 'page-gallery') renderGallery();
+  if (id === 'page-admin') renderAdmin();
+}
+
+// ── GALLERY ──
+function renderGallery() {
+  const el = document.getElementById('gallery-list');
+  if (!works.length) {
+    el.innerHTML = `<div class="empty-state"><p>還沒有作品</p><button onclick="showPage('page-admin')">前往後台上傳</button></div>`;
+    return;
+  }
+  el.innerHTML = works.map((w, i) => `
+    <div class="work-item" data-idx="${i}">
+      <div class="work-img-wrap${w.img ? '' : ' no-img'}" ${w.img ? `onclick="openLightbox(${i})"` : ''} style="${w.img ? '' : 'cursor:default'}">
+        ${w.img ? `<img src="${w.img}" alt="${w.title || ''}">` : `<div style="width:100%;padding-top:75%;background:var(--bg2);border-radius:1px"></div>`}
+      </div>
+      <div class="work-text">
+        ${w.title ? `<div class="work-title">${esc(w.title)}</div>` : ''}
+        ${w.date ? `<div class="work-date">${esc(w.date)}</div>` : ''}
+        ${w.story ? `<div class="work-story">${esc(w.story).replace(/\n/g,'<br>')}</div>` : ''}
+      </div>
+    </div>`).join('');
+  const obs = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }), { threshold: 0.12 });
+  el.querySelectorAll('.work-item').forEach(el => obs.observe(el));
+}
+
+// ── LIGHTBOX ──
+function openLightbox(idx) { lbIndex = idx; updateLightbox(false); document.getElementById('lightbox').classList.add('open'); document.body.style.overflow = 'hidden'; }
+function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); document.body.style.overflow = ''; }
+function updateLightbox(animate) {
+  const w = works[lbIndex];
+  const img = document.getElementById('lb-img');
+  if (animate) {
+    img.classList.add('out');
+    setTimeout(() => { img.src = w.img||''; document.getElementById('lb-title').textContent = w.title||''; document.getElementById('lb-date').textContent = w.date||''; img.classList.remove('out'); }, 220);
+  } else { img.src = w.img||''; document.getElementById('lb-title').textContent = w.title||''; document.getElementById('lb-date').textContent = w.date||''; }
+  const only = works.length <= 1;
+  document.getElementById('lb-prev').classList.toggle('hidden', only || lbIndex === 0);
+  document.getElementById('lb-next').classList.toggle('hidden', only || lbIndex === works.length - 1);
+}
+function lbNav(dir) { const n = lbIndex + dir; if (n < 0 || n >= works.length) return; lbIndex = n; updateLightbox(true); }
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('lightbox').classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') lbNav(-1);
+  if (e.key === 'ArrowRight') lbNav(1);
+});
+
+// ── ADMIN LIST ──
+function renderAdmin() {
+  const el = document.getElementById('admin-list');
+  if (!works.length) { el.innerHTML = '<p style="color:var(--ink-faint);font-size:12px;letter-spacing:1px;text-align:center;padding:20px 0">尚無作品，點擊上方按鈕開始</p>'; return; }
+  el.innerHTML = works.map((w, i) => `
+    <div class="admin-item" draggable="true" data-idx="${i}" ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})" ondrop="dragDrop(event,${i})" ondragleave="dragLeave(event)">
+      <span class="drag-handle" title="拖曳排序">⠿</span>
+      ${w.img ? `<img class="admin-item-thumb" src="${w.img}" alt="">` : `<div class="admin-item-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:10px">無圖</div>`}
+      <div class="admin-item-info">
+        <div class="admin-item-name">${esc(w.title)||'（無標題）'}</div>
+        <div class="admin-item-date">${esc(w.date)||'—'}</div>
+      </div>
+      <div class="admin-item-actions">
+        <button class="btn btn-ghost btn-sm" onclick="editWork(${i})">編輯</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteWork(${i})">刪除</button>
+      </div>
+    </div>`).join('');
+}
+
+// ── SINGLE FORM ──
+function openForm(reset=true) {
+  if (reset) {
+    editingId = null; currentImgData = null;
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-date').value = '';
+    document.getElementById('f-story').value = '';
+    document.getElementById('img-preview').style.display = 'none';
+    document.getElementById('img-preview').src = '';
+    document.getElementById('upload-hint').style.display = '';
+    document.getElementById('img-file-input').value = '';
+    document.getElementById('form-title').textContent = '新增作品';
+    document.getElementById('single-ai-btn-wrap').style.display = 'none';
+    document.getElementById('single-ai-area').innerHTML = '';
+  }
+  document.getElementById('form-panel').classList.add('open');
+  document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function closeForm() { document.getElementById('form-panel').classList.remove('open'); editingId = null; currentImgData = null; }
+function editWork(i) {
+  const w = works[i]; editingId = i; currentImgData = w.img || null;
+  document.getElementById('f-title').value = w.title || '';
+  document.getElementById('f-date').value = displayToISO(w.date || '');
+  document.getElementById('f-story').value = w.story || '';
+  if (w.img) { document.getElementById('img-preview').src = w.img; document.getElementById('img-preview').style.display = 'block'; document.getElementById('upload-hint').style.display = 'none'; }
+  document.getElementById('form-title').textContent = '編輯作品';
+  openForm(false);
+}
+function saveWork() {
+  const title = document.getElementById('f-title').value.trim();
+  const date = isoToDisplay(document.getElementById('f-date').value);
+  const story = document.getElementById('f-story').value.trim();
+  const work = { title, date, story, img: currentImgData || '' };
+  if (editingId !== null) works[editingId] = work; else works.push(work);
+  saveWorks(works); closeForm(); renderAdmin();
+}
+function deleteWork(i) { if (!confirm('確定要刪除這張作品嗎？')) return; works.splice(i, 1); saveWorks(works); renderAdmin(); }
+function handleImgUpload(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    currentImgData = ev.target.result;
+    document.getElementById('img-preview').src = currentImgData;
+    document.getElementById('img-preview').style.display = 'block';
+    document.getElementById('upload-hint').style.display = 'none';
+    document.getElementById('single-ai-btn-wrap').style.display = 'block';
+    document.getElementById('single-ai-area').innerHTML = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function triggerSingleAI() {
+  if (!currentImgData) return;
+  const aiArea = document.getElementById('single-ai-area');
+  aiArea.innerHTML = `
+    <div class="ai-loading" style="margin-top:10px">
+      <div class="ai-loading-dots"><span></span><span></span><span></span></div>
+      <div class="ai-loading-text">AI 分析中…</div>
+    </div>`;
+
+  let data;
+  try {
+    const base64 = currentImgData.split(',')[1];
+    const mediaType = currentImgData.split(';')[0].split(':')[1] || 'image/jpeg';
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: `你是一位能感受畫作情感的文字工作者，擅長以文青、詩意的中文為畫作命名並撰寫故事。\n請分析這張畫，給出一個建議的畫作名稱（4字以內，具意境）以及一段故事（50-100字，第一人稱，像畫家的內心獨白，帶有情感與氛圍）。\n請嚴格只回傳以下JSON格式，不要有任何前言或說明：\n{"title":"畫作名稱","story":"故事內容"}`,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+          { type: 'text', text: '請為這張畫命名並寫一段故事。' }
+        ]}]
+      })
+    });
+    data = await response.json();
+  } catch(err) {
+    aiArea.innerHTML = `<div class="ai-card" style="margin-top:10px;border-color:#d0a0a0;background:#fdf5f5"><div class="ai-card-label" style="color:#b05050">連線失敗</div><div class="ai-card-story" style="color:#b05050">${err.message}</div></div>`;
+    return;
+  }
+
+  const text = data.content?.map(c => c.text || '').join('').trim() || '';
+  const result = parseAIResult(text);
+
+  // fill single-form fields directly
+  const titleEl = document.getElementById('f-title');
+  const storyEl = document.getElementById('f-story');
+  if (titleEl) titleEl.value = result.title || '';
+  if (storyEl) storyEl.value = result.story || '';
+
+  aiArea.innerHTML = `
+    <div style="padding:12px 14px;background:#f3f0f8;border:1px solid #d8d0ec;border-radius:2px;margin-top:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${result.title||result.story?'8px':'0'}">
+        <span style="color:#7a6a9a;font-size:12px">✦</span>
+        <span style="font-family:var(--sans);font-size:9px;letter-spacing:2px;color:#7a6a9a;flex:1">AI 已填入欄位，可直接編輯</span>
+        <button class="btn btn-ai btn-sm" onclick="triggerSingleAI()">重新產出</button>
+      </div>
+      ${result.title ? `<div style="font-family:var(--serif);font-size:13px;color:var(--ink);margin-bottom:4px">「${esc(result.title)}」</div>` : ''}
+      ${result.story ? `<div style="font-family:var(--serif);font-size:11px;color:var(--ink-light);line-height:1.8">${esc(result.story)}</div>` : ''}
+    </div>`;
+}
+
+
+
+// ── DRAG SORT ──
+let dragSrcIdx = null;
+function dragStart(e, i) { dragSrcIdx = i; e.dataTransfer.effectAllowed = 'move'; }
+function dragOver(e, i) { e.preventDefault(); document.querySelectorAll('.admin-item').forEach(el => el.classList.remove('drag-over')); e.currentTarget.classList.add('drag-over'); }
+function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+function dragDrop(e, i) { e.preventDefault(); if (dragSrcIdx === null || dragSrcIdx === i) return; const m = works.splice(dragSrcIdx, 1)[0]; works.splice(i, 0, m); saveWorks(works); renderAdmin(); }
+
+// ── BATCH UPLOAD ──
+function openBatch() {
+  batchItems = [];
+  document.getElementById('batch-list').innerHTML = '';
+  document.getElementById('batch-footer').style.display = 'none';
+  document.getElementById('batch-file-input').value = '';
+  document.getElementById('batch-panel').classList.add('open');
+  document.getElementById('batch-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function closeBatch() { document.getElementById('batch-panel').classList.remove('open'); batchItems = []; }
+
+function handleBatchUpload(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const item = { imgData: ev.target.result, filename: file.name, title: '', date: '', story: '' };
+      batchItems.push(item);
+      renderBatchItem(batchItems.length - 1);
+      document.getElementById('batch-footer').style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// drag-drop on drop zone
+const dropZone = document.getElementById('batch-drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('dragover');
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const item = { imgData: ev.target.result, filename: file.name, title: '', date: '', story: '' };
+      batchItems.push(item);
+      renderBatchItem(batchItems.length - 1);
+      document.getElementById('batch-footer').style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+  });
+});
+
+function renderBatchItem(idx) {
+  const item = batchItems[idx];
+  const list = document.getElementById('batch-list');
+  const div = document.createElement('div');
+  div.className = 'batch-item';
+  div.id = `batch-item-${idx}`;
+  div.innerHTML = `
+    <div class="batch-item-header">
+      <img class="batch-item-thumb" src="${item.imgData}" alt="">
+      <div class="batch-item-meta">
+        <div class="batch-item-filename">${esc(item.filename)}</div>
+      </div>
+      <div class="batch-item-actions">
+        <button class="btn btn-ai btn-sm" onclick="triggerAI(${idx})">✦ AI 分析</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleBatchForm(${idx})">手動填寫</button>
+        <button class="btn btn-danger btn-sm" onclick="removeBatchItem(${idx})">移除</button>
+      </div>
+    </div>
+    <div class="batch-item-form" id="batch-form-${idx}">
+      <div id="ai-area-${idx}"></div>
+      <div class="batch-form-grid">
+        <div class="form-group">
+          <label>畫作名稱（選填）</label>
+          <input type="text" id="bt-title-${idx}" placeholder="春日">
+        </div>
+        <div class="form-group">
+          <label>創作日期（選填）</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="date" id="bt-date-${idx}" style="flex:1">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="setBatchToday(${idx})">今天</button>
+          </div>
+        </div>
+        <div class="form-group full">
+          <label>故事（選填）</label>
+          <textarea id="bt-story-${idx}" placeholder="這張畫背後的故事…"></textarea>
+        </div>
+      </div>
+    </div>`;
+  list.appendChild(div);
+}
+
+function toggleBatchForm(idx) {
+  const form = document.getElementById(`batch-form-${idx}`);
+  form.classList.toggle('open');
+}
+
+function removeBatchItem(idx) {
+  batchItems[idx] = null;
+  const el = document.getElementById(`batch-item-${idx}`);
+  if (el) el.remove();
+  if (batchItems.filter(Boolean).length === 0) document.getElementById('batch-footer').style.display = 'none';
+}
+
+function setBatchToday(idx) {
+  document.getElementById(`bt-date-${idx}`).value = todayISO();
+}
+
+// ── AI ANALYSIS ──
+async function triggerAI(idx) {
+  const item = batchItems[idx];
+  if (!item) return;
+
+  // open the form so results are visible
+  document.getElementById(`batch-form-${idx}`).classList.add('open');
+  const aiArea = document.getElementById(`ai-area-${idx}`);
+
+  // show loading
+  aiArea.innerHTML = `
+    <div class="ai-loading">
+      <div class="ai-loading-dots"><span></span><span></span><span></span></div>
+      <div class="ai-loading-text">AI 分析中…</div>
+    </div>`;
+
+  let data;
+  try {
+    const base64 = item.imgData.split(',')[1];
+    const mediaType = item.imgData.split(';')[0].split(':')[1] || 'image/jpeg';
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: `你是一位能感受畫作情感的文字工作者，擅長以文青、詩意的中文為畫作命名並撰寫故事。\n請分析這張畫，給出一個建議的畫作名稱（4字以內，具意境）以及一段故事（50-100字，第一人稱，像畫家的內心獨白，帶有情感與氛圍）。\n請嚴格只回傳以下JSON格式，不要有任何前言或說明：\n{"title":"畫作名稱","story":"故事內容"}`,
+        messages: [{
+          role: 'user',
+          content: [{
+            type: 'image',
+            source: { type: 'base64', media_type: mediaType, data: base64 }
+          }, {
+            type: 'text',
+            text: '請為這張畫命名並寫一段故事。'
+          }]
+        }]
+      })
+    });
+    data = await response.json();
+  } catch(err) {
+    aiArea.innerHTML = `<div class="ai-card" style="border-color:#d0a0a0;background:#fdf5f5"><div class="ai-card-label" style="color:#b05050">連線失敗</div><div class="ai-card-story" style="color:#b05050">${err.message}</div></div>`;
+    return;
+  }
+
+  const text = data.content?.map(c => c.text || '').join('').trim() || '';
+  const result = parseAIResult(text);
+  showAISuggestion(idx, result);
+}
+
+function showAISuggestion(idx, result) {
+  const titleEl = document.getElementById(`bt-title-${idx}`);
+  const storyEl = document.getElementById(`bt-story-${idx}`);
+  if (titleEl) titleEl.value = result.title || '';
+  if (storyEl) storyEl.value = result.story || '';
+
+  const aiArea = document.getElementById(`ai-area-${idx}`);
+  aiArea.innerHTML = `
+    <div style="padding:12px 14px;background:#f3f0f8;border:1px solid #d8d0ec;border-radius:2px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${result.title||result.story?'10px':'0'}">
+        <span style="color:#7a6a9a;font-size:12px">✦</span>
+        <span style="font-family:var(--sans);font-size:9px;letter-spacing:2px;color:#7a6a9a;flex:1">AI 已填入欄位，可直接編輯</span>
+        <button class="btn btn-ai btn-sm" onclick="triggerAI(${idx})">重新產出</button>
+      </div>
+      ${result.title ? `<div style="font-family:var(--serif);font-size:13px;color:var(--ink);margin-bottom:4px">「${esc(result.title)}」</div>` : ''}
+      ${result.story ? `<div style="font-family:var(--serif);font-size:11px;color:var(--ink-light);line-height:1.8">${esc(result.story)}</div>` : ''}
+    </div>`;
+}
+
+// ── SHARED AI RESULT PARSER ──
+function parseAIResult(text) {
+  if (!text) return { title: '', story: '' };
+  // attempt 1: clean JSON parse
+  try {
+    const clean = text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(clean);
+    if (parsed.title || parsed.story) return { title: parsed.title || '', story: parsed.story || '' };
+  } catch {}
+  // attempt 2: extract with regex in case there's surrounding text
+  try {
+    const m = text.match(/\{[\s\S]*?"title"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"story"\s*:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?\}/);
+    if (m) return { title: m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"'), story: m[2].replace(/\\n/g,'\n').replace(/\\"/g,'"') };
+    // also try story before title order
+    const m2 = text.match(/\{[\s\S]*?"story"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"title"\s*:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?\}/);
+    if (m2) return { title: m2[2].replace(/\\n/g,'\n').replace(/\\"/g,'"'), story: m2[1].replace(/\\n/g,'\n').replace(/\\"/g,'"') };
+  } catch {}
+  // fallback: return raw text as story
+  return { title: '', story: text };
+}
+
+function saveAllBatch() {
+  let saved = 0;
+  batchItems.forEach((item, idx) => {
+    if (!item) return;
+    const title = (document.getElementById(`bt-title-${idx}`)?.value || '').trim();
+    const dateISO = document.getElementById(`bt-date-${idx}`)?.value || '';
+    const date = isoToDisplay(dateISO);
+    const story = (document.getElementById(`bt-story-${idx}`)?.value || '').trim();
+    works.push({ title, date, story, img: item.imgData });
+    saved++;
+  });
+  saveWorks(works);
+  closeBatch();
+  renderAdmin();
+  if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
+}
+
+// ── DATE ──
+function todayISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function isoToDisplay(iso) { if (!iso) return ''; const [y,m,d] = iso.split('-'); return `${y}.${m}.${d}`; }
+function displayToISO(display) { if (!display) return ''; return display.replace(/\./g,'-'); }
+function setToday() { document.getElementById('f-date').value = todayISO(); }
+
+// ── UTILS ──
+function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── HASH ROUTING ──
+function handleHash() { if (window.location.hash === '#admin') showPage('page-admin'); else showPage('page-gallery'); }
+window.addEventListener('hashchange', handleHash);
+handleHash();
+</script>
+</body>
+</html>
