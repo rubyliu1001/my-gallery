@@ -186,6 +186,14 @@
     </nav>
   </header>
   <div class="admin-wrap">
+    <!-- API Key Setting -->
+    <div id="apikey-bar" style="margin-bottom:24px;padding:16px 20px;background:var(--paper);border:1px solid var(--bg2);border-radius:2px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-family:var(--sans);font-size:9px;letter-spacing:2px;color:var(--ink-faint);text-transform:uppercase;flex-shrink:0">Anthropic API Key</span>
+      <input type="password" id="apikey-input" placeholder="AIza..." style="flex:1;min-width:200px;font-family:var(--sans);font-size:12px;color:var(--ink);background:var(--bg);border:1px solid var(--bg2);border-radius:1px;padding:8px 12px;outline:none;">
+      <button class="btn btn-ghost btn-sm" onclick="saveApiKey()">儲存</button>
+      <span id="apikey-status" style="font-family:var(--sans);font-size:9px;letter-spacing:1px;color:var(--ink-faint)"></span>
+    </div>
+
     <div class="admin-header">
       <div class="admin-title">作品列表</div>
       <div class="admin-header-actions">
@@ -334,6 +342,7 @@ document.addEventListener('keydown', e => {
 
 // ── ADMIN LIST ──
 function renderAdmin() {
+  loadApiKeyInput();
   const el = document.getElementById('admin-list');
   if (!works.length) { el.innerHTML = '<p style="color:var(--ink-faint);font-size:12px;letter-spacing:1px;text-align:center;padding:20px 0">尚無作品，點擊上方按鈕開始</p>'; return; }
   el.innerHTML = works.map((w, i) => `
@@ -411,31 +420,17 @@ async function triggerSingleAI() {
       <div class="ai-loading-text">AI 分析中…</div>
     </div>`;
 
-  let data;
+  if (!getApiKey()) {
+    document.getElementById('single-ai-area').innerHTML = `<div class="ai-card" style="margin-top:10px;border-color:#d0a0a0;background:#fdf5f5"><div class="ai-card-label" style="color:#b05050">尚未設定 API Key</div><div class="ai-card-story" style="color:#b05050">請在上方輸入 Gemini API Key 並儲存後再試。</div></div>`;
+    return;
+  }
+  let result;
   try {
-    const base64 = currentImgData.split(',')[1];
-    const mediaType = currentImgData.split(';')[0].split(':')[1] || 'image/jpeg';
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: `你是一位能感受畫作情感的文字工作者，擅長以文青、詩意的中文為畫作命名並撰寫故事。\n請分析這張畫，給出一個建議的畫作名稱（4字以內，具意境）以及一段故事（50-100字，第一人稱，像畫家的內心獨白，帶有情感與氛圍）。\n請嚴格只回傳以下JSON格式，不要有任何前言或說明：\n{"title":"畫作名稱","story":"故事內容"}`,
-        messages: [{ role: 'user', content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
-          { type: 'text', text: '請為這張畫命名並寫一段故事。' }
-        ]}]
-      })
-    });
-    data = await response.json();
+    result = await callGemini(currentImgData);
   } catch(err) {
     aiArea.innerHTML = `<div class="ai-card" style="margin-top:10px;border-color:#d0a0a0;background:#fdf5f5"><div class="ai-card-label" style="color:#b05050">連線失敗</div><div class="ai-card-story" style="color:#b05050">${err.message}</div></div>`;
     return;
   }
-
-  const text = data.content?.map(c => c.text || '').join('').trim() || '';
-  const result = parseAIResult(text);
 
   // fill single-form fields directly
   const titleEl = document.getElementById('f-title');
@@ -582,39 +577,14 @@ async function triggerAI(idx) {
       <div class="ai-loading-text">AI 分析中…</div>
     </div>`;
 
-  let data;
+  let batchResult;
   try {
-    const base64 = item.imgData.split(',')[1];
-    const mediaType = item.imgData.split(';')[0].split(':')[1] || 'image/jpeg';
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: `你是一位能感受畫作情感的文字工作者，擅長以文青、詩意的中文為畫作命名並撰寫故事。\n請分析這張畫，給出一個建議的畫作名稱（4字以內，具意境）以及一段故事（50-100字，第一人稱，像畫家的內心獨白，帶有情感與氛圍）。\n請嚴格只回傳以下JSON格式，不要有任何前言或說明：\n{"title":"畫作名稱","story":"故事內容"}`,
-        messages: [{
-          role: 'user',
-          content: [{
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: base64 }
-          }, {
-            type: 'text',
-            text: '請為這張畫命名並寫一段故事。'
-          }]
-        }]
-      })
-    });
-    data = await response.json();
+    batchResult = await callGemini(item.imgData);
   } catch(err) {
     aiArea.innerHTML = `<div class="ai-card" style="border-color:#d0a0a0;background:#fdf5f5"><div class="ai-card-label" style="color:#b05050">連線失敗</div><div class="ai-card-story" style="color:#b05050">${err.message}</div></div>`;
     return;
   }
-
-  const text = data.content?.map(c => c.text || '').join('').trim() || '';
-  const result = parseAIResult(text);
-  showAISuggestion(idx, result);
+  showAISuggestion(idx, batchResult);
 }
 
 function showAISuggestion(idx, result) {
@@ -634,6 +604,35 @@ function showAISuggestion(idx, result) {
       ${result.title ? `<div style="font-family:var(--serif);font-size:13px;color:var(--ink);margin-bottom:4px">「${esc(result.title)}」</div>` : ''}
       ${result.story ? `<div style="font-family:var(--serif);font-size:11px;color:var(--ink-light);line-height:1.8">${esc(result.story)}</div>` : ''}
     </div>`;
+}
+
+// ── GEMINI API ──
+async function callGemini(imgData) {
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('no_key');
+  const base64 = imgData.split(',')[1];
+  const mediaType = imgData.split(';')[0].split(':')[1] || 'image/jpeg';
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: mediaType, data: base64 } },
+            { text: '你是一位能感受畫作情感的文字工作者，擅長以文青、詩意的中文為畫作命名並撰寫故事。請分析這張畫，給出一個建議的畫作名稱（4字以內，具意境）以及一段故事（50-100字，第一人稱，像畫家的內心獨白，帶有情感與氛圍）。請嚴格只回傳以下JSON格式，不要有任何前言或說明：{"title":"畫作名稱","story":"故事內容"}' }
+          ]
+        }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 512 }
+      })
+    }
+  );
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message || 'Gemini error');
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return parseAIResult(text);
 }
 
 // ── SHARED AI RESULT PARSER ──
@@ -679,6 +678,24 @@ function todayISO() { const d = new Date(); return `${d.getFullYear()}-${String(
 function isoToDisplay(iso) { if (!iso) return ''; const [y,m,d] = iso.split('-'); return `${y}.${m}.${d}`; }
 function displayToISO(display) { if (!display) return ''; return display.replace(/\./g,'-'); }
 function setToday() { document.getElementById('f-date').value = todayISO(); }
+
+// ── API KEY ──
+const APIKEY_STORAGE = 'gallery_gemini_key';
+function getApiKey() { return localStorage.getItem(APIKEY_STORAGE) || ''; }
+function saveApiKey() {
+  const val = document.getElementById('apikey-input').value.trim();
+  if (!val) return;
+  localStorage.setItem(APIKEY_STORAGE, val);
+  document.getElementById('apikey-status').textContent = '已儲存 ✓';
+  setTimeout(() => { document.getElementById('apikey-status').textContent = ''; }, 2000);
+}
+function loadApiKeyInput() {
+  const k = getApiKey();
+  if (k) {
+    document.getElementById('apikey-input').value = k;
+    document.getElementById('apikey-status').textContent = '已設定 ✓';
+  }
+}
 
 // ── UTILS ──
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
