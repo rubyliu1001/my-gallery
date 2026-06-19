@@ -277,14 +277,55 @@
 
 <script>
 const STORAGE_KEY = 'gallery_works_v1';
+const DB_NAME = 'galleryDB', DB_STORE = 'images', DB_VER = 1;
+
+// ── IndexedDB helpers ──
+function openDB() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE, { keyPath: 'id' });
+    req.onsuccess = e => res(e.target.result);
+    req.onerror = e => rej(e.target.error);
+  });
+}
+async function saveImg(id, dataUrl) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).put({ id, dataUrl });
+    tx.oncomplete = () => res();
+    tx.onerror = e => rej(e.target.error);
+  });
+}
+async function loadImg(id) {
+  const db = await openDB();
+  return new Promise((res) => {
+    const req = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(id);
+    req.onsuccess = e => res(e.target.result?.dataUrl || '');
+    req.onerror = () => res('');
+  });
+}
+async function deleteImg(id) {
+  const db = await openDB();
+  return new Promise((res) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).delete(id);
+    tx.oncomplete = () => res();
+    tx.onerror = () => res();
+  });
+}
+async function loadAllImgs(ids) {
+  const results = {};
+  await Promise.all(ids.map(async id => { results[id] = await loadImg(id); }));
+  return results;
+}
+
+// ── Works metadata (no img field stored in localStorage) ──
 function loadWorks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; } }
 function saveWorks(arr) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-  } catch(e) {
-    alert('儲存失敗：圖片檔案太大，請使用較小的圖片（建議 1MB 以下）。');
-    throw e;
-  }
+  // strip img from metadata before saving to localStorage
+  const meta = arr.map(w => ({ ...w, img: undefined }));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(meta));
 }
 
 let works = loadWorks();
@@ -305,23 +346,29 @@ function showPage(id) {
 }
 
 // ── GALLERY ──
-function renderGallery() {
+async function renderGallery() {
   const el = document.getElementById('gallery-list');
   if (!works.length) {
     el.innerHTML = `<div class="empty-state"><p>還沒有作品</p><button onclick="showPage('page-admin')">前往後台上傳</button></div>`;
     return;
   }
-  el.innerHTML = works.map((w, i) => `
+  // load all images from IndexedDB
+  const imgIds = works.map(w => w.imgId).filter(Boolean);
+  const imgs = await loadAllImgs(imgIds);
+  el.innerHTML = works.map((w, i) => {
+    const src = imgs[w.imgId] || '';
+    return `
     <div class="work-item" data-idx="${i}">
-      <div class="work-img-wrap${w.img ? '' : ' no-img'}" ${w.img ? `onclick="openLightbox(${i})"` : ''} style="${w.img ? '' : 'cursor:default'}">
-        ${w.img ? `<img src="${w.img}" alt="${w.title || ''}">` : `<div style="width:100%;padding-top:75%;background:var(--bg2);border-radius:1px"></div>`}
+      <div class="work-img-wrap${src ? '' : ' no-img'}" ${src ? `onclick="openLightbox(${i})"` : ''} style="${src ? '' : 'cursor:default'}">
+        ${src ? `<img src="${src}" alt="${w.title || ''}">` : `<div style="width:100%;padding-top:75%;background:var(--bg2);border-radius:1px"></div>`}
       </div>
       <div class="work-text">
         ${w.title ? `<div class="work-title">${esc(w.title)}</div>` : ''}
         ${w.date ? `<div class="work-date">${esc(w.date)}</div>` : ''}
         ${w.story ? `<div class="work-story">${esc(w.story).replace(/\n/g,'<br>')}</div>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   const obs = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }), { threshold: 0.12 });
   el.querySelectorAll('.work-item').forEach(el => obs.observe(el));
 }
@@ -329,13 +376,14 @@ function renderGallery() {
 // ── LIGHTBOX ──
 function openLightbox(idx) { lbIndex = idx; updateLightbox(false); document.getElementById('lightbox').classList.add('open'); document.body.style.overflow = 'hidden'; }
 function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); document.body.style.overflow = ''; }
-function updateLightbox(animate) {
+async function updateLightbox(animate) {
   const w = works[lbIndex];
+  const src = w.imgId ? await loadImg(w.imgId) : '';
   const img = document.getElementById('lb-img');
   if (animate) {
     img.classList.add('out');
-    setTimeout(() => { img.src = w.img||''; document.getElementById('lb-title').textContent = w.title||''; document.getElementById('lb-date').textContent = w.date||''; img.classList.remove('out'); }, 220);
-  } else { img.src = w.img||''; document.getElementById('lb-title').textContent = w.title||''; document.getElementById('lb-date').textContent = w.date||''; }
+    setTimeout(() => { img.src = src; document.getElementById('lb-title').textContent = w.title||''; document.getElementById('lb-date').textContent = w.date||''; img.classList.remove('out'); }, 220);
+  } else { img.src = src; document.getElementById('lb-title').textContent = w.title||''; document.getElementById('lb-date').textContent = w.date||''; }
   const only = works.length <= 1;
   document.getElementById('lb-prev').classList.toggle('hidden', only || lbIndex === 0);
   document.getElementById('lb-next').classList.toggle('hidden', only || lbIndex === works.length - 1);
@@ -349,14 +397,18 @@ document.addEventListener('keydown', e => {
 });
 
 // ── ADMIN LIST ──
-function renderAdmin() {
+async function renderAdmin() {
   loadApiKeyInput();
   const el = document.getElementById('admin-list');
   if (!works.length) { el.innerHTML = '<p style="color:var(--ink-faint);font-size:12px;letter-spacing:1px;text-align:center;padding:20px 0">尚無作品，點擊上方按鈕開始</p>'; return; }
-  el.innerHTML = works.map((w, i) => `
+  const imgIds = works.map(w => w.imgId).filter(Boolean);
+  const imgs = await loadAllImgs(imgIds);
+  el.innerHTML = works.map((w, i) => {
+    const src = imgs[w.imgId] || '';
+    return `
     <div class="admin-item" draggable="true" data-idx="${i}" ondragstart="dragStart(event,${i})" ondragover="dragOver(event,${i})" ondrop="dragDrop(event,${i})" ondragleave="dragLeave(event)">
       <span class="drag-handle" title="拖曳排序">⠿</span>
-      ${w.img ? `<img class="admin-item-thumb" src="${w.img}" alt="">` : `<div class="admin-item-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:10px">無圖</div>`}
+      ${src ? `<img class="admin-item-thumb" src="${src}" alt="">` : `<div class="admin-item-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:10px">無圖</div>`}
       <div class="admin-item-info">
         <div class="admin-item-name">${esc(w.title)||'（無標題）'}</div>
         <div class="admin-item-date">${esc(w.date)||'—'}</div>
@@ -365,7 +417,8 @@ function renderAdmin() {
         <button class="btn btn-ghost btn-sm" onclick="editWork(${i})">編輯</button>
         <button class="btn btn-danger btn-sm" onclick="deleteWork(${i})">刪除</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── SINGLE FORM ──
@@ -387,24 +440,38 @@ function openForm(reset=true) {
   document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function closeForm() { document.getElementById('form-panel').classList.remove('open'); editingId = null; currentImgData = null; }
-function editWork(i) {
-  const w = works[i]; editingId = i; currentImgData = w.img || null;
+async function editWork(i) {
+  const w = works[i]; editingId = i;
+  const src = w.imgId ? await loadImg(w.imgId) : '';
+  currentImgData = src || null;
   document.getElementById('f-title').value = w.title || '';
   document.getElementById('f-date').value = displayToISO(w.date || '');
   document.getElementById('f-story').value = w.story || '';
-  if (w.img) { document.getElementById('img-preview').src = w.img; document.getElementById('img-preview').style.display = 'block'; document.getElementById('upload-hint').style.display = 'none'; }
+  if (src) { document.getElementById('img-preview').src = src; document.getElementById('img-preview').style.display = 'block'; document.getElementById('upload-hint').style.display = 'none'; }
+  document.getElementById('single-ai-btn-wrap').style.display = src ? 'block' : 'none';
   document.getElementById('form-title').textContent = '編輯作品';
   openForm(false);
 }
-function saveWork() {
+async function saveWork() {
   const title = document.getElementById('f-title').value.trim();
   const date = isoToDisplay(document.getElementById('f-date').value);
   const story = document.getElementById('f-story').value.trim();
-  const work = { title, date, story, img: currentImgData || '' };
+  let imgId = editingId !== null ? works[editingId].imgId : null;
+  if (currentImgData) {
+    imgId = imgId || ('img_' + Date.now() + '_' + Math.random().toString(36).slice(2));
+    await saveImg(imgId, currentImgData);
+  }
+  const work = { title, date, story, imgId: imgId || '' };
   if (editingId !== null) works[editingId] = work; else works.push(work);
   saveWorks(works); closeForm(); renderAdmin();
 }
-function deleteWork(i) { if (!confirm('確定要刪除這張作品嗎？')) return; works.splice(i, 1); saveWorks(works); renderAdmin(); }
+async function deleteWork(i) {
+  if (!confirm('確定要刪除這張作品嗎？')) return;
+  const w = works[i];
+  if (w.imgId) await deleteImg(w.imgId);
+  works.splice(i, 1);
+  saveWorks(works); renderAdmin();
+}
 // ── IMAGE COMPRESSION ──
 function compressImage(file) {
   return new Promise(resolve => {
@@ -651,47 +718,57 @@ async function callGroq(imgData) {
 // ── SHARED AI RESULT PARSER ──
 function parseAIResult(text) {
   if (!text) return { title: '', story: '' };
-  // attempt 1: clean JSON parse
+
+  // attempt 1: find JSON block anywhere in text
+  const jsonMatch = text.match(/\{[^{}]*"title"[^{}]*"story"[^{}]*\}|\{[^{}]*"story"[^{}]*"title"[^{}]*\}/s);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.title || parsed.story) return { title: (parsed.title||'').trim(), story: (parsed.story||'').trim() };
+    } catch {}
+  }
+
+  // attempt 2: clean markdown fences then parse entire text
   try {
-    const clean = text.replace(/```json|```/g, '').trim();
+    const clean = text.replace(/```json|```/gi, '').trim();
     const parsed = JSON.parse(clean);
-    if (parsed.title || parsed.story) return { title: parsed.title || '', story: parsed.story || '' };
+    if (parsed.title || parsed.story) return { title: (parsed.title||'').trim(), story: (parsed.story||'').trim() };
   } catch {}
-  // attempt 2: extract with regex in case there's surrounding text
+
+  // attempt 3: regex extract title and story values individually
   try {
-    const m = text.match(/\{[\s\S]*?"title"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"story"\s*:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?\}/);
-    if (m) return { title: m[1].replace(/\\n/g,'\n').replace(/\\"/g,'"'), story: m[2].replace(/\\n/g,'\n').replace(/\\"/g,'"') };
-    // also try story before title order
-    const m2 = text.match(/\{[\s\S]*?"story"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"title"\s*:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?\}/);
-    if (m2) return { title: m2[2].replace(/\\n/g,'\n').replace(/\\"/g,'"'), story: m2[1].replace(/\\n/g,'\n').replace(/\\"/g,'"') };
+    const titleM = text.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const storyM = text.match(/"story"\s*:\s*"((?:[^"\\]|\\[\s\S])*)"/);
+    if (titleM || storyM) {
+      const t = titleM ? titleM[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').trim() : '';
+      const s = storyM ? storyM[1].replace(/\\n/g,'\n').replace(/\\"/g,'"').trim() : '';
+      return { title: t, story: s };
+    }
   } catch {}
-  // fallback: return raw text as story
+
+  // fallback: show raw text in story so user can see what went wrong
   return { title: '', story: text };
 }
 
-function saveAllBatch() {
+async function saveAllBatch() {
   let saved = 0;
-  batchItems.forEach((item, idx) => {
-    if (!item) return;
-    // ensure form is open so elements exist in DOM
+  for (const [idx, item] of batchItems.entries()) {
+    if (!item) continue;
     const formEl = document.getElementById(`batch-form-${idx}`);
     if (formEl && !formEl.classList.contains('open')) formEl.classList.add('open');
     const title = (document.getElementById(`bt-title-${idx}`)?.value || '').trim();
     const dateISO = document.getElementById(`bt-date-${idx}`)?.value || '';
     const date = isoToDisplay(dateISO);
     const story = (document.getElementById(`bt-story-${idx}`)?.value || '').trim();
-    works.push({ title, date, story, img: item.imgData });
+    const imgId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    await saveImg(imgId, item.imgData);
+    works.push({ title, date, story, imgId });
     saved++;
-  });
-  try {
-    saveWorks(works);
-    closeBatch();
-    renderAdmin();
-    if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
-  } catch(e) {
-    // saveWorks already shows alert, roll back the pushes
-    works.splice(works.length - saved, saved);
   }
+  saveWorks(works);
+  closeBatch();
+  renderAdmin();
+  if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
 }
 
 // ── DATE ──
