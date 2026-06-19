@@ -200,6 +200,7 @@
       <div class="admin-header-actions">
         <button class="btn btn-ghost" onclick="openBatch()">⊕ 批量上傳</button>
         <button class="btn btn-primary" onclick="openForm()">＋ 新增作品</button>
+        <button class="btn btn-ghost btn-sm" onclick="runDiagnostic()" style="font-size:9px;color:var(--ink-faint)">診斷</button>
       </div>
     </div>
 
@@ -816,6 +817,44 @@ function loadApiKeyInput() {
     document.getElementById('apikey-input').value = k;
     document.getElementById('apikey-status').textContent = '已設定 ✓';
   }
+}
+
+// ── DIAGNOSTIC ──
+async function runDiagnostic() {
+  const lines = [];
+  lines.push('=== Supabase 連線診斷 ===');
+  lines.push('URL: ' + SB_URL);
+  lines.push('Bucket: ' + SB_BUCKET);
+
+  // test 1: upload tiny image
+  try {
+    const tiny = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const blob = await (await fetch(tiny)).blob();
+    const r = await fetch(`${SB_URL}/storage/v1/object/${SB_BUCKET}/diag_test.png`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'image/png', 'x-upsert': 'true' },
+      body: blob
+    });
+    const txt = await r.text();
+    lines.push('上傳測試: ' + r.status + ' ' + txt.slice(0, 100));
+  } catch(e) {
+    lines.push('上傳錯誤: ' + e.message);
+  }
+
+  // test 2: public read
+  try {
+    const r = await fetch(`${SB_URL}/storage/v1/object/public/${SB_BUCKET}/diag_test.png`);
+    lines.push('公開讀取: ' + r.status);
+  } catch(e) {
+    lines.push('讀取錯誤: ' + e.message);
+  }
+
+  // test 3: localStorage works data
+  const works = loadWorks();
+  lines.push('作品數量: ' + works.length);
+  if (works.length > 0) lines.push('最新作品 imgId: ' + (works[works.length-1].imgId || '空'));
+
+  alert(lines.join('\n'));
 }
 
 // ── UTILS ──
