@@ -277,46 +277,45 @@
 
 <script>
 const STORAGE_KEY = 'gallery_works_v1';
-const DB_NAME = 'galleryDB', DB_STORE = 'images', DB_VER = 1;
+// ── Supabase Storage ──
+const SB_URL = 'https://znfjnekbitakpdqtsbfp.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpuZmpuZWtiaXRha3BkcXRzYmZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NDgzMDksImV4cCI6MjA5NzQyNDMwOX0.pRL4wWUEx8r3NDa6XqoxN0yEH2YizRnERfzXWq5eNJs';
+const SB_BUCKET = 'paintings';
 
-// ── IndexedDB helpers ──
-function openDB() {
-  return new Promise((res, rej) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(DB_STORE, { keyPath: 'id' });
-    req.onsuccess = e => res(e.target.result);
-    req.onerror = e => rej(e.target.error);
-  });
-}
 async function saveImg(id, dataUrl) {
-  const db = await openDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction(DB_STORE, 'readwrite');
-    tx.objectStore(DB_STORE).put({ id, dataUrl });
-    tx.oncomplete = () => res();
-    tx.onerror = e => rej(e.target.error);
+  // convert base64 to blob
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  const ext = blob.type.split('/')[1] || 'jpg';
+  const path = `${id}.${ext}`;
+  const r = await fetch(`${SB_URL}/storage/v1/object/${SB_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': blob.type, 'x-upsert': 'true' },
+    body: blob
   });
+  if (!r.ok) throw new Error(`Upload failed: ${r.status} ${await r.text()}`);
+  return path;
 }
+
 async function loadImg(id) {
-  const db = await openDB();
-  return new Promise((res) => {
-    const req = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(id);
-    req.onsuccess = e => res(e.target.result?.dataUrl || '');
-    req.onerror = () => res('');
-  });
+  if (!id) return '';
+  // id may already be a full path like "img_xxx.jpg" or just "img_xxx"
+  const path = id.includes('.') ? id : id + '.jpg';
+  return `${SB_URL}/storage/v1/object/public/${SB_BUCKET}/${path}`;
 }
+
 async function deleteImg(id) {
-  const db = await openDB();
-  return new Promise((res) => {
-    const tx = db.transaction(DB_STORE, 'readwrite');
-    tx.objectStore(DB_STORE).delete(id);
-    tx.oncomplete = () => res();
-    tx.onerror = () => res();
+  if (!id) return;
+  const path = id.includes('.') ? id : id + '.jpg';
+  await fetch(`${SB_URL}/storage/v1/object/${SB_BUCKET}/${path}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${SB_KEY}` }
   });
 }
+
 async function loadAllImgs(ids) {
   const results = {};
-  await Promise.all(ids.map(async id => { results[id] = await loadImg(id); }));
+  ids.forEach(id => { if (id) results[id] = `${SB_URL}/storage/v1/object/public/${SB_BUCKET}/${id.includes('.') ? id : id + '.jpg'}`; });
   return results;
 }
 
@@ -443,7 +442,7 @@ function closeForm() { document.getElementById('form-panel').classList.remove('o
 async function editWork(i) {
   const w = works[i]; editingId = i;
   const src = w.imgId ? await loadImg(w.imgId) : '';
-  currentImgData = src || null;
+  currentImgData = src || null; // supabase URL, not re-uploaded unless changed
   document.getElementById('f-title').value = w.title || '';
   document.getElementById('f-date').value = displayToISO(w.date || '');
   document.getElementById('f-story').value = w.story || '';
@@ -457,9 +456,9 @@ async function saveWork() {
   const date = isoToDisplay(document.getElementById('f-date').value);
   const story = document.getElementById('f-story').value.trim();
   let imgId = editingId !== null ? works[editingId].imgId : null;
-  if (currentImgData) {
-    imgId = imgId || ('img_' + Date.now() + '_' + Math.random().toString(36).slice(2));
-    await saveImg(imgId, currentImgData);
+  if (currentImgData && currentImgData.startsWith('data:')) {
+    const newId = imgId || ('img_' + Date.now() + '_' + Math.random().toString(36).slice(2));
+    imgId = await saveImg(newId, currentImgData);
   }
   const work = { title, date, story, imgId: imgId || '' };
   if (editingId !== null) works[editingId] = work; else works.push(work);
@@ -760,8 +759,8 @@ async function saveAllBatch() {
     const dateISO = document.getElementById(`bt-date-${idx}`)?.value || '';
     const date = isoToDisplay(dateISO);
     const story = (document.getElementById(`bt-story-${idx}`)?.value || '').trim();
-    const imgId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-    await saveImg(imgId, item.imgData);
+    const rawId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const imgId = await saveImg(rawId, item.imgData);
     works.push({ title, date, story, imgId });
     saved++;
   }
