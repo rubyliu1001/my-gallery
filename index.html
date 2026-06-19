@@ -456,13 +456,25 @@ async function saveWork() {
   const date = isoToDisplay(document.getElementById('f-date').value);
   const story = document.getElementById('f-story').value.trim();
   let imgId = editingId !== null ? works[editingId].imgId : null;
-  if (currentImgData && currentImgData.startsWith('data:')) {
-    const newId = imgId || ('img_' + Date.now() + '_' + Math.random().toString(36).slice(2));
-    imgId = await saveImg(newId, currentImgData);
+
+  const saveBtn = document.querySelector('#form-panel .btn-primary');
+  const origText = saveBtn?.textContent || '儲存';
+  if (saveBtn) { saveBtn.textContent = '上傳中…'; saveBtn.disabled = true; }
+
+  try {
+    if (currentImgData && currentImgData.startsWith('data:')) {
+      const newId = imgId || ('img_' + Date.now() + '_' + Math.random().toString(36).slice(2));
+      imgId = await saveImg(newId, currentImgData);
+    }
+    const work = { title, date, story, imgId: imgId || '' };
+    if (editingId !== null) works[editingId] = work; else works.push(work);
+    saveWorks(works);
+    closeForm();
+    renderAdmin();
+  } catch(err) {
+    alert('儲存失敗：' + err.message);
+    if (saveBtn) { saveBtn.textContent = origText; saveBtn.disabled = false; }
   }
-  const work = { title, date, story, imgId: imgId || '' };
-  if (editingId !== null) works[editingId] = work; else works.push(work);
-  saveWorks(works); closeForm(); renderAdmin();
 }
 async function deleteWork(i) {
   if (!confirm('確定要刪除這張作品嗎？')) return;
@@ -750,24 +762,36 @@ function parseAIResult(text) {
 }
 
 async function saveAllBatch() {
+  const saveBtn = document.querySelector('#batch-footer .btn-primary');
+  const origText = saveBtn?.textContent || '全部儲存';
+  if (saveBtn) { saveBtn.textContent = '上傳中…'; saveBtn.disabled = true; }
+
   let saved = 0;
-  for (const [idx, item] of batchItems.entries()) {
-    if (!item) continue;
-    const formEl = document.getElementById(`batch-form-${idx}`);
-    if (formEl && !formEl.classList.contains('open')) formEl.classList.add('open');
-    const title = (document.getElementById(`bt-title-${idx}`)?.value || '').trim();
-    const dateISO = document.getElementById(`bt-date-${idx}`)?.value || '';
-    const date = isoToDisplay(dateISO);
-    const story = (document.getElementById(`bt-story-${idx}`)?.value || '').trim();
-    const rawId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-    const imgId = await saveImg(rawId, item.imgData);
-    works.push({ title, date, story, imgId });
-    saved++;
+  const pushes = [];
+  try {
+    for (const [idx, item] of batchItems.entries()) {
+      if (!item) continue;
+      const formEl = document.getElementById(`batch-form-${idx}`);
+      if (formEl && !formEl.classList.contains('open')) formEl.classList.add('open');
+      const title = (document.getElementById(`bt-title-${idx}`)?.value || '').trim();
+      const dateISO = document.getElementById(`bt-date-${idx}`)?.value || '';
+      const date = isoToDisplay(dateISO);
+      const story = (document.getElementById(`bt-story-${idx}`)?.value || '').trim();
+      if (saveBtn) saveBtn.textContent = `上傳中… (${saved + 1}/${batchItems.filter(Boolean).length})`;
+      const rawId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      const imgId = await saveImg(rawId, item.imgData);
+      pushes.push({ title, date, story, imgId });
+      saved++;
+    }
+    pushes.forEach(w => works.push(w));
+    saveWorks(works);
+    closeBatch();
+    renderAdmin();
+    if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
+  } catch(err) {
+    alert('儲存失敗：' + err.message + '\n\n請確認 Supabase Storage 設定是否正確。');
+    if (saveBtn) { saveBtn.textContent = origText; saveBtn.disabled = false; }
   }
-  saveWorks(works);
-  closeBatch();
-  renderAdmin();
-  if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
 }
 
 // ── DATE ──
