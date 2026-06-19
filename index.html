@@ -28,6 +28,7 @@
     display: flex; align-items: center; justify-content: space-between;
     padding: 36px 60px 28px; border-bottom: 1px solid var(--bg2);
   }
+  @media(max-width:600px){ header { padding: 20px 16px; } }
   .site-title { font-family: var(--serif); font-size: 13px; letter-spacing: 6px; color: var(--ink-light); text-transform: uppercase; }
   .header-nav { display: flex; gap: 28px; align-items: center; }
   .header-nav a { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; color: var(--ink-faint); text-decoration: none; text-transform: uppercase; cursor: pointer; transition: color 0.2s; }
@@ -75,7 +76,7 @@
   .lb-img-fade.out { opacity: 0; }
 
   /* ADMIN */
-  .admin-wrap { max-width: 860px; margin: 0 auto; padding: 56px 40px; }
+  .admin-wrap { max-width: 860px; margin: 0 auto; padding: 56px 40px; } @media(max-width:600px){ .admin-wrap { padding: 24px 16px; } }
   .admin-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 40px; border-bottom: 1px solid var(--bg2); padding-bottom: 20px; }
   .admin-title { font-family: var(--sans); font-size: 10px; letter-spacing: 4px; color: var(--ink-faint); text-transform: uppercase; }
   .admin-header-actions { display: flex; gap: 10px; }
@@ -107,7 +108,7 @@
   .form-panel { background: var(--paper); border: 1px solid var(--bg2); border-radius: 2px; padding: 28px; margin-bottom: 32px; display: none; }
   .form-panel.open { display: block; }
   .form-title { font-family: var(--sans); font-size: 10px; letter-spacing: 3px; color: var(--ink-faint); text-transform: uppercase; margin-bottom: 24px; }
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; } @media(max-width:600px){ .form-grid { grid-template-columns: 1fr; } }
   .form-group { display: flex; flex-direction: column; gap: 6px; }
   .form-group.full { grid-column: 1 / -1; }
   .form-group label { font-family: var(--sans); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--ink-faint); }
@@ -133,15 +134,15 @@
 
   .batch-list { display: flex; flex-direction: column; gap: 16px; }
   .batch-item { border: 1px solid var(--bg2); border-radius: 2px; background: var(--bg); overflow: hidden; }
-  .batch-item-header { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+  .batch-item-header { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; flex-wrap: wrap; }
   .batch-item-thumb { width: 64px; height: 64px; object-fit: cover; border-radius: 1px; flex-shrink: 0; }
   .batch-item-meta { flex: 1; min-width: 0; }
   .batch-item-filename { font-family: var(--sans); font-size: 11px; color: var(--ink-light); letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .batch-item-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .batch-item-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
   .batch-item-form { padding: 0 16px 16px; display: none; }
   .batch-item-form.open { display: block; }
-  .batch-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .batch-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; } @media(max-width:600px){ .batch-form-grid { grid-template-columns: 1fr; } }
   .batch-form-grid .form-group.full { grid-column: 1 / -1; }
 
   /* AI suggestion card */
@@ -239,8 +240,8 @@
         </div>
         <div class="form-group">
           <label>創作日期（選填）</label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input type="date" id="f-date" style="flex:1">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="date" id="f-date" style="flex:1;min-width:140px">
             <button type="button" class="btn btn-ghost btn-sm" onclick="setToday()">今天</button>
           </div>
         </div>
@@ -683,6 +684,9 @@ function saveAllBatch() {
   let saved = 0;
   batchItems.forEach((item, idx) => {
     if (!item) return;
+    // ensure form is open so elements exist in DOM
+    const formEl = document.getElementById(`batch-form-${idx}`);
+    if (formEl && !formEl.classList.contains('open')) formEl.classList.add('open');
     const title = (document.getElementById(`bt-title-${idx}`)?.value || '').trim();
     const dateISO = document.getElementById(`bt-date-${idx}`)?.value || '';
     const date = isoToDisplay(dateISO);
@@ -690,10 +694,15 @@ function saveAllBatch() {
     works.push({ title, date, story, img: item.imgData });
     saved++;
   });
-  saveWorks(works);
-  closeBatch();
-  renderAdmin();
-  if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
+  try {
+    saveWorks(works);
+    closeBatch();
+    renderAdmin();
+    if (saved > 0) alert(`已儲存 ${saved} 張作品！`);
+  } catch(e) {
+    // saveWorks already shows alert, roll back the pushes
+    works.splice(works.length - saved, saved);
+  }
 }
 
 // ── DATE ──
