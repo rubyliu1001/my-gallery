@@ -320,13 +320,50 @@ async function loadAllImgs(ids) {
   return results;
 }
 
-// ── Works metadata (no img field stored in localStorage) ──
-function loadWorks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; } }
-function saveWorks(arr) {
-  // strip img from metadata before saving to localStorage
-  const meta = arr.map(w => ({ ...w, img: undefined }));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(meta));
+// ── Works metadata stored in Supabase DB ──
+const SB_TABLE = 'works';
+const SB_REST = `${SB_URL}/rest/v1/${SB_TABLE}`;
+const SB_HEADERS = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+
+async function loadWorksFromDB() {
+  try {
+    const r = await fetch(`${SB_REST}?order=sort_order.asc,id.asc`, { headers: SB_HEADERS });
+    if (!r.ok) return [];
+    const rows = await r.json();
+    return rows.map(row => ({ id: row.id, title: row.title||'', date: row.date||'', story: row.story||'', imgId: row.img_id||'' }));
+  } catch { return []; }
 }
+
+async function insertWork(work) {
+  const body = { title: work.title, date: work.date, story: work.story, img_id: work.imgId, sort_order: work.sort_order ?? 0 };
+  const r = await fetch(SB_REST, { method: 'POST', headers: SB_HEADERS, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await r.text());
+  const rows = await r.json();
+  return rows[0]?.id;
+}
+
+async function updateWork(id, work) {
+  const body = { title: work.title, date: work.date, story: work.story, img_id: work.imgId };
+  const r = await fetch(`${SB_REST}?id=eq.${id}`, { method: 'PATCH', headers: SB_HEADERS, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await r.text());
+}
+
+async function deleteWorkFromDB(id) {
+  const r = await fetch(`${SB_REST}?id=eq.${id}`, { method: 'DELETE', headers: SB_HEADERS });
+  if (!r.ok) throw new Error(await r.text());
+}
+
+async function updateSortOrder(worksArr) {
+  for (let i = 0; i < worksArr.length; i++) {
+    if (worksArr[i].id) {
+      await fetch(`${SB_REST}?id=eq.${worksArr[i].id}`, { method: 'PATCH', headers: SB_HEADERS, body: JSON.stringify({ sort_order: i }) });
+    }
+  }
+}
+
+// keep localStorage as fallback cache only
+function loadWorks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; } }
+function saveWorks(arr) { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
 
 let works = loadWorks();
 let editingId = null;
@@ -337,10 +374,11 @@ let lbIndex = 0;
 let batchItems = [];
 
 // ── PAGES ──
-function showPage(id) {
+async function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
-  works = loadWorks();
+  works = await loadWorksFromDB();
+  saveWorks(works); // cache locally
   if (id === 'page-gallery') renderGallery();
   if (id === 'page-admin') renderAdmin();
 }
@@ -468,7 +506,13 @@ async function saveWork() {
       imgId = await saveImg(newId, currentImgData);
     }
     const work = { title, date, story, imgId: imgId || '' };
-    if (editingId !== null) works[editingId] = work; else works.push(work);
+    if (editingId !== null) {
+      await updateWork(works[editingId].id, work);
+    } else {
+      const newId = await insertWork(work);
+      work.id = newId;
+    }
+    works = await loadWorksFromDB();
     saveWorks(works);
     closeForm();
     renderAdmin();
@@ -481,7 +525,8 @@ async function deleteWork(i) {
   if (!confirm('確定要刪除這張作品嗎？')) return;
   const w = works[i];
   if (w.imgId) await deleteImg(w.imgId);
-  works.splice(i, 1);
+  if (w.id) await deleteWorkFromDB(w.id);
+  works = await loadWorksFromDB();
   saveWorks(works); renderAdmin();
 }
 // ── IMAGE COMPRESSION ──
@@ -551,7 +596,15 @@ let dragSrcIdx = null;
 function dragStart(e, i) { dragSrcIdx = i; e.dataTransfer.effectAllowed = 'move'; }
 function dragOver(e, i) { e.preventDefault(); document.querySelectorAll('.admin-item').forEach(el => el.classList.remove('drag-over')); e.currentTarget.classList.add('drag-over'); }
 function dragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-function dragDrop(e, i) { e.preventDefault(); if (dragSrcIdx === null || dragSrcIdx === i) return; const m = works.splice(dragSrcIdx, 1)[0]; works.splice(i, 0, m); saveWorks(works); renderAdmin(); }
+async function dragDrop(e, i) {
+  e.preventDefault();
+  if (dragSrcIdx === null || dragSrcIdx === i) return;
+  const m = works.splice(dragSrcIdx, 1)[0];
+  works.splice(i, 0, m);
+  saveWorks(works);
+  renderAdmin();
+  await updateSortOrder(works);
+}
 
 // ── BATCH UPLOAD ──
 function openBatch() {
@@ -784,7 +837,11 @@ async function saveAllBatch() {
       pushes.push({ title, date, story, imgId });
       saved++;
     }
-    pushes.forEach(w => works.push(w));
+    for (const w of pushes) {
+      const newId = await insertWork(w);
+      w.id = newId;
+    }
+    works = await loadWorksFromDB();
     saveWorks(works);
     closeBatch();
     renderAdmin();
@@ -861,7 +918,7 @@ async function runDiagnostic() {
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── HASH ROUTING ──
-function handleHash() { if (window.location.hash === '#admin') showPage('page-admin'); else showPage('page-gallery'); }
+async function handleHash() { if (window.location.hash === '#admin') await showPage('page-admin'); else await showPage('page-gallery'); }
 window.addEventListener('hashchange', handleHash);
 handleHash();
 </script>
