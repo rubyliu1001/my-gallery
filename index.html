@@ -406,21 +406,10 @@ function saveWork() {
 }
 function deleteWork(i) { if (!confirm('確定要刪除這張作品嗎？')) return; works.splice(i, 1); saveWorks(works); renderAdmin(); }
 // ── IMAGE COMPRESSION ──
-function compressImage(file, maxWidth=1200, quality=0.82) {
+function compressImage(file) {
   return new Promise(resolve => {
     const reader = new FileReader();
-    reader.onload = ev => {
-      const img = new Image();
-      img.onload = () => {
-        let w = img.width, h = img.height;
-        if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.src = ev.target.result;
-    };
+    reader.onload = ev => resolve(ev.target.result);
     reader.readAsDataURL(file);
   });
 }
